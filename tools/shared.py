@@ -199,7 +199,7 @@ def check_node_version():
 # we re-check sanity when the settings are changed)
 # We also re-check sanity and clear the cache when the version changes
 
-EMSCRIPTEN_VERSION = '1.3.6'
+EMSCRIPTEN_VERSION = '1.3.7'
 
 def check_sanity(force=False):
   try:
@@ -402,7 +402,7 @@ except:
 COMPILER_OPTS = COMPILER_OPTS + ['-m32', '-U__i386__', '-U__i386', '-Ui386',
                                  '-U__SSE__', '-U__SSE_MATH__', '-U__SSE2__', '-U__SSE2_MATH__', '-U__MMX__',
                                  '-DEMSCRIPTEN', '-U__STRICT_ANSI__',
-                                 '-target', 'i386-pc-linux-gnu', '-D__IEEE_LITTLE_ENDIAN', '-fno-math-errno']
+                                 '-target', 'le32-unknown-nacl', '-D__IEEE_LITTLE_ENDIAN', '-fno-math-errno']
 
 USE_EMSDK = not os.environ.get('EMMAKEN_NO_SDK')
 
