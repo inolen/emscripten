@@ -73,11 +73,7 @@ int main (int argc, char ** argv)
 
   ENetAddress address;
   enet_address_set_host (& address, "localhost");
-#if EMSCRIPTEN
-  address.port = 1237;
-#else
   address.port = 1235;
-#endif
 
   printf("connecting to server...\n");
 
@@ -89,16 +85,6 @@ int main (int argc, char ** argv)
     "No available peers for initiating an ENet connection.\n");
     exit (EXIT_FAILURE);
   }
-
-#if EMSCRIPTEN
-  emscripten_run_script("console.log('adding iframe');"
-                        "var iframe = document.createElement('iframe');"
-                        "iframe.src = 'server.html';"
-                        "iframe.width = '100%';"
-                        "iframe.height = '33%';"
-                        "document.body.appendChild(iframe);"
-                        "console.log('added.');");
-#endif
 
   emscripten_set_main_loop(main_loop, 3, 1);
 

@@ -90,6 +90,11 @@ class RunnerCore(unittest.TestCase):
     Settings.reset()
     Settings = tools.shared.Settings
     self.banned_js_engines = []
+    
+    # Use current directory for node module lookup
+    scriptdir = os.path.dirname(os.path.abspath(__file__))
+    os.environ['NODE_PATH'] = os.path.realpath(scriptdir + '/../node_modules')
+
     if not self.save_dir:
       dirname = tempfile.mkdtemp(prefix='emscripten_test_' + self.__class__.__name__ + '_', dir=TEMP_DIR)
     else:
@@ -7464,11 +7469,11 @@ def process(filename):
         }
       '''
       self.do_run(src, '''www.cheezburger.com : 1 : 4
-* -84.29.1.0.
+* -84.29.0.0.
 fail.on.this.never.work : 1 : 4
-* -84.29.2.0.
+* -84.29.1.0.
 localhost : 1 : 4
-* -84.29.3.0.
+* -84.29.2.0.
 ''')
 
     def test_799(self):
@@ -12936,7 +12941,7 @@ elif 'browser' in str(sys.argv):
     def test_websockets(self):
       try:
         with self.WebsockHarness(8990):
-          self.btest('websockets.c', expected='571')
+          self.btest('websockets.c', expected='571', args=['-DSOCKK=8991'])
       finally:
         self.clean_pids()
 
@@ -12963,7 +12968,7 @@ elif 'browser' in str(sys.argv):
 
       try:
         with self.WebsockHarness(8990, partial):
-          self.btest('websockets_partial.c', expected='165')
+          self.btest('websockets_partial.c', expected='165', args=['-DSOCKK=8991'])
       finally:
         self.clean_pids()
 
@@ -12979,29 +12984,38 @@ elif 'browser' in str(sys.argv):
       for datagram in [0,1]:
         for fileops in [0,1]:
           try:
-            print >> sys.stderr, 'test_websocket_bi datagram %d, fileops %d' % (datagram, fileops)
             with self.WebsockHarness(8992, self.make_relay_server(8992, 8994)):
               with self.WebsockHarness(8994, no_server=True):
                 Popen([PYTHON, EMCC, path_from_root('tests', 'websockets_bi_side.c'), '-o', 'side.html', '-DSOCKK=8995', '-DTEST_DGRAM=%d' % datagram]).communicate()
-                self.btest('websockets_bi.c', expected='2499', args=['-DSOCKK=8993', '-DTEST_DGRAM=%d' % datagram, '-DTEST_FILE_OPS=%s' % fileops])
+                self.btest('websockets_bi.c', expected='2499', args=['-DSOCKK=8993', '-DTEST_DGRAM=%d' % datagram, '-DTEST_FILE_OPS=%s' % fileops, '-DEMBED_SIDE'])
           finally:
             self.clean_pids()
 
     def test_websockets_bi_listen(self):
       try:
-        with self.WebsockHarness(6992, self.make_relay_server(6992, 6994)):
-          with self.WebsockHarness(6994, no_server=True):
-            Popen([PYTHON, EMCC, path_from_root('tests', 'websockets_bi_side.c'), '-o', 'side.html', '-DSOCKK=6995']).communicate()
-            self.btest('websockets_bi_listener.c', expected='2499', args=['-DSOCKK=6993'])
+        Popen([PYTHON, EMCC, path_from_root('tests', 'websockets_bi_listener.c'), '-o', 'listener.js', '-DSOCKK=8993']).communicate()
+        process = Popen([NODE_JS, 'listener.js'])
+        browser.pids_to_clean.append(process.pid)
+        self.btest('websockets_bi.c', expected='2499', args=['-DSOCKK=8993'])
       finally:
         self.clean_pids()
 
     def test_websockets_gethostbyname(self):
       try:
         with self.WebsockHarness(7000):
-          self.btest('websockets_gethostbyname.c', expected='571', args=['-O2'])
+          self.btest('websockets_gethostbyname.c', expected='0', args=['-O2', '-DSOCKK=7001'])
       finally:
         self.clean_pids()
+
+    def test_websockets_getsockname(self):
+      for datagram in [0, 1]:
+        try:
+          Popen([PYTHON, EMCC, path_from_root('tests', 'websockets_listen_echo.c'), '-o', 'listener.js', '-DSOCKK=5000', '-DUSE_UDP=%s' % datagram]).communicate()
+          process = Popen([NODE_JS, 'listener.js'])
+          browser.pids_to_clean.append(process.pid)
+          self.btest('websockets_getsockname.c', expected='0', args=['-O2', '-DSOCKK=5000', '-DUSE_UDP=%s' % datagram])
+        finally:
+          self.clean_pids()
 
     def test_websockets_bi_bigdata(self):
       try:
@@ -13021,7 +13035,7 @@ elif 'browser' in str(sys.argv):
         ssock.bind(("127.0.0.1", 8994))
       try:
         with self.WebsockHarness(8994, closedServer):
-          self.btest('websockets_select.c', expected='266')
+          self.btest('websockets_select.c', expected='266', args=['-DSOCKK=8995'])
       finally:
         self.clean_pids()
 
@@ -13041,7 +13055,7 @@ elif 'browser' in str(sys.argv):
 
       try:
         with self.WebsockHarness(8994, closingServer):
-          self.btest('websockets_select_server_closes_connection.c', expected='266')
+          self.btest('websockets_select_server_closes_connection.c', expected='266', args=['-DSOCKK=8995'])
       finally:
         self.clean_pids()
 
@@ -13073,7 +13087,7 @@ elif 'browser' in str(sys.argv):
 
       try:
         with self.WebsockHarness(8998, closingServer_rw):
-          self.btest('websockets_select_server_closes_connection_rw.c', expected='266')
+          self.btest('websockets_select_server_closes_connection_rw.c', expected='266', args=['-DSOCKK=8999'])
       finally:
         self.clean_pids()
 
@@ -13086,12 +13100,12 @@ elif 'browser' in str(sys.argv):
       Popen([PYTHON, path_from_root('emmake'), 'make']).communicate()
       enet = [self.in_dir('enet', '.libs', 'libenet.a'), '-I'+path_from_root('tests', 'enet', 'include')]
       os.chdir(pwd)
-      Popen([PYTHON, EMCC, path_from_root('tests', 'enet_server.c'), '-o', 'server.html'] + enet).communicate()
+      Popen([PYTHON, EMCC, path_from_root('tests', 'enet_server.c'), '-o', 'enet_server.js'] + enet).communicate()
+      process = Popen([NODE_JS, 'enet_server.js'])
+      browser.pids_to_clean.append(process.pid)
 
       try:
-        with self.WebsockHarness(1234, self.make_relay_server(1234, 1236)):
-          with self.WebsockHarness(1236, no_server=True):
-            self.btest('enet_client.c', expected='0', args=enet)
+        self.btest('enet_client.c', expected='0', args=enet)
       finally:
         self.clean_pids()
 

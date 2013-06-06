@@ -774,6 +774,9 @@ var C_DEFINES = {'SI_MESGQ': '5',
    '_SC_THREAD_STACK_MIN': '39',
    '_SC_TIMEOUTS': '82',
    'POLLOUT': '2',
+   'POLLHUP': '16',
+   'POLLPRI': '32',
+   'POLLRDNORM': '64',
    '_CS_XBS5_LPBIG_OFFBIG_LINTFLAGS': '16',
    '_SC_CHILD_MAX': '1',
    '__RAND_MAX': '2147483647',
@@ -1261,6 +1264,7 @@ var C_DEFINES = {'SI_MESGQ': '5',
    'AF_INET6': '6',
    'FIONREAD': '1',
    'SOCK_STREAM': '200',
+   'SOCK_DGRAM': '20',
    'IPPROTO_TCP': 1
 };
 

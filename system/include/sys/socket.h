@@ -13,7 +13,6 @@ extern "C" {
 #define SOMAXCONN 128
 #define PF_LOCAL 1
 #define PF_UNIX PF_LOCAL
-#define PF_INET 2
 #define SO_BROADCAST 6
 #define AF_UNIX PF_UNIX
 
@@ -39,6 +38,7 @@ extern "C" {
 
 typedef unsigned int sa_family_t;
 #define AF_INET 1
+#define PF_INET AF_INET
 #define AF_INET6 6
 #define PF_INET6 AF_INET6
 
