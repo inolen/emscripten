@@ -231,7 +231,8 @@ var setjmpId = 1; // Used in setjmp/longjmp
 var setjmpLabels = {};
 #endif
 
-var ABORT = false; // whether we are quitting the application. no code should run after this. set in exit() and abort()
+var initialStackTop;
+var ABORT = true; // whether we are quitting the application. no code should run after this. set in exit() and abort()
 
 var undef = 0;
 // tempInt is used for 32-bit signed values or smaller. tempBigInt is used
@@ -711,22 +712,180 @@ function callRuntimeCallbacks(callbacks) {
   }
 }
 
-var __ATINIT__ = []; // functions called during startup
-var __ATMAIN__ = []; // functions called when main() is to be run
-var __ATEXIT__ = []; // functions called during shutdown
+// This is how the startup process looks like currently:
+// preload(callback)
+//
+// run()
+//  `- setStatus
+//  `- preload                                                            // if preload has aleady been ran, this will do nothing
+//  |  `- preRun
+//  |     `- runs legacy Module['preInit'] and Module['preRun'] tasks
+//  |     `- runs new tasks added through addPreRun
+//  |        `- initRuntime
+//  |           `- callRuntimeCallbacks(__ATINIT__)
+//  |        `- preMain
+//  |           `- callRuntimeCallbacks(__ATMAIN__)
+//  |        `- callMain
+//  |           `- initRuntime
+//  |              `- callRuntimeCallbacks(__ATINIT__)
+//  |           `- _main
+//  |        `- if (!noExitRuntime) exit()                                // async main functions shouldn't immediately exit
+//
+// exit()
+//  `- postMain
+//  `- exitRuntime
+//  |  `- callRuntimeCallbacks(__ATEXIT__)
+//  `- postRun
+//  |  `- runs legacy Module['postRun'] tasks
+//  |  `- runs new tasks added through addPostRun
 
-var runtimeInitialized = false;
+// __AT*__ callbacks are for internal use
+var preRunTasks   = [];
+var __ATINIT__    = []; // functions called during startup
+var __ATMAIN__    = []; // functions called when main() is to be run
+var postMainTasks = [];
+var __ATEXIT__    = []; // functions called during shutdown
+var postRunTasks  = [];
 
-function ensureInitRuntime() {
-  if (runtimeInitialized) return;
-  runtimeInitialized = true;
+// users should hook into these
+function addPreRun(func) {
+  preRunTasks.push(func);
+}
+Module["addPreRun"] = Module.addPreRun = addPreRun;
+
+function addPostMain(func) {
+  postMainTasks.push(func);
+}
+Module["addPostMain"] = Module.addPostMain = addPostMain;
+
+function addPostRun(func) {
+  postRunTasks.push(func);
+}
+Module["addPostRun"] = Module.addPostRun = addPostRun;
+
+//
+function preRun(callback) {
+  callback = callback || function () {};
+
+  // run legacy preInit tasks
+  if (Module['preInit']) {
+    if (typeof Module['preInit'] == 'function') Module['preInit'] = [Module['preInit']];
+    while (Module['preInit'].length > 0) {
+      Module['preInit'].pop()();
+    }
+  }
+
+  // push legacy preRun tasks to the preRun list
+  if (Module['preRun']) {
+    if (typeof Module['preRun'] == 'function') Module['preRun'] = [Module['preRun']];
+    while (Module['preRun'].length > 0) {
+      var fn = Module['preRun'].pop();
+      // MEGA HACK - legacy preRun tasks expected to be ran synchronously.
+      // We're double checking the function arguments, and if none exist,
+      // wrapping the function to automatically trigger the new callback.
+      var argrx = /function\s*\((\s*[^\s]+\s*)\)/;
+      var str = fn.toString();
+      if (!str.match(argx)) {
+        var og = fn;
+        fn = function (cb) {
+          og();
+          cb();
+        };
+      }
+      preRunTasks.push(fn);
+    }
+  }
+
+  // run each prerun task asynchronously  
+  var progress = Module['monitorRunDependencies'] || function () {};
+  var total = preRunTasks.length;
+
+  var next = function () {
+    // nothing left to do
+    if (!preRunTasks.length) {
+      progress(0, total);
+      return callback(null);
+    }
+
+    var fn = preRunTasks.shift();
+    fn(function (err) {
+      progress(preRunTasks.length, total);
+
+      if (err) {
+        return callback(err);
+      }
+
+      next();
+    });
+  };
+
+  next();
+
+#if ASSERTIONS
+  // Check for missing dependencies every few seconds
+  if (typeof setTimeout !== 'undefined') {
+    var checkDependenciesTimeout;
+
+    var checkDependencies = function () {
+      if (!preRunTasks.length) {
+        if (checkDependenciesTimeout) {
+          clearTimeout(checkDependenciesTimeout);
+        }
+        return;
+      }
+
+      Module.printErr('still waiting on run dependencies:');
+      for (var i = 0; i < preRunTasks.length; i++) {
+        Module.printErr('dependency: ' + preRunTasks[i].toString());
+      }
+      Module.printErr('(end of list)');
+
+      checkDependenciesTimeout = setTimeout(checkDependencies, 10000);
+    };
+
+    checkDependencies();
+  }
+#endif
+}
+function initRuntime() {
+  if (initRuntime.initialized) return;
+  initRuntime.nitialized = true;
   callRuntimeCallbacks(__ATINIT__);
 }
 function preMain() {
   callRuntimeCallbacks(__ATMAIN__);
 }
+function postMain() {
+  while (postMainTasks.length) {
+    var fn = postMainTasks.shift();
+    fn();
+  }
+}
 function exitRuntime() {
   callRuntimeCallbacks(__ATEXIT__);
+}
+function postRun() {
+  // run legacy postrun tasks
+  if (Module['postRun']) {
+    if (typeof Module['postRun'] == 'function') Module['postRun'] = [Module['postRun']];
+    while (Module['postRun'].length > 0) {
+      Module['postRun'].pop()();
+    }
+  }
+
+  while (postRunTasks.length) {
+    var fn = postRunTasks.shift();
+    fn();
+  }
+}
+
+// no longer supported
+function addRunDependency (id) {
+  throw new Exception('addRunDependency no longer supported. Instead, invoke the callback parameter of your preRun function to signal completion.');
+}
+
+function removeRunDependency (id) {
+  throw new Exception('removeRunDependency no longer supported. Instead, invoke the callback parameter of your preRun function to signal completion.');
 }
 
 // Tools
@@ -798,82 +957,26 @@ Math['imul'] = function(a, b) {
 #endif
 Math.imul = Math['imul'];
 
-// A counter of dependencies for calling run(). If we need to
-// do asynchronous work before running, increment this and
-// decrement it. Incrementing must happen in a place like
-// PRE_RUN_ADDITIONS (used by emcc to add file preloading).
-// Note that you can add dependencies in preRun, even though
-// it happens right before run - run will be postponed until
-// the dependencies are met.
-var runDependencies = 0;
-var runDependencyTracking = {};
-var calledInit = false, calledRun = false;
-var runDependencyWatcher = null;
-function addRunDependency(id) {
-  runDependencies++;
-  if (Module['monitorRunDependencies']) {
-    Module['monitorRunDependencies'](runDependencies);
-  }
-  if (id) {
-    assert(!runDependencyTracking[id]);
-    runDependencyTracking[id] = 1;
-#if ASSERTIONS
-    if (runDependencyWatcher === null && typeof setInterval !== 'undefined') {
-      // Check for missing dependencies every few seconds
-      runDependencyWatcher = setInterval(function() {
-        var shown = false;
-        for (var dep in runDependencyTracking) {
-          if (!shown) {
-            shown = true;
-            Module.printErr('still waiting on run dependencies:');
-          }
-          Module.printErr('dependency: ' + dep);
-        }
-        if (shown) {
-          Module.printErr('(end of list)');
-        }
-      }, 10000);
-    }
-#endif
-  } else {
-    Module.printErr('warning: run dependency added without ID');
-  }
-}
-Module['addRunDependency'] = addRunDependency;
-function removeRunDependency(id) {
-  runDependencies--;
-  if (Module['monitorRunDependencies']) {
-    Module['monitorRunDependencies'](runDependencies);
-  }
-  if (id) {
-    assert(runDependencyTracking[id]);
-    delete runDependencyTracking[id];
-  } else {
-    Module.printErr('warning: run dependency removed without ID');
-  }
-  if (runDependencies == 0) {
-    if (runDependencyWatcher !== null) {
-      clearInterval(runDependencyWatcher);
-      runDependencyWatcher = null;
-    } 
-    // If run has never been called, and we should call run (INVOKE_RUN is true, and Module.noInitialRun is not false)
-    if (!calledRun && shouldRunNow) run();
-  }
-}
-Module['removeRunDependency'] = removeRunDependency;
-
 Module["preloadedImages"] = {}; // maps url to image data
 Module["preloadedAudios"] = {}; // maps url to audio data
-
-function addPreRun(func) {
-  if (!Module['preRun']) Module['preRun'] = [];
-  else if (typeof Module['preRun'] == 'function') Module['preRun'] = [Module['preRun']];
-  Module['preRun'].push(func);
-}
 
 #if PGO
 var PGOMonitor = {
   called: {},
+  oninit: function (cb) {
+    if (this.allGenerated) {
+      return cb();
+    }
+    this.oninitcallback = cb;
+  },
+  initialize: function(allGenerated) {
+    this.allGenerated = allGenerated;
+
+    if (this.oninitcallback) {
+      this.oninitcallback();
+      this.oninitcallback = null;
+    }
+  },
   dump: function() {
     var dead = [];
     for (var i = 0; i < this.allGenerated.length; i++) {
@@ -885,7 +988,11 @@ var PGOMonitor = {
 };
 Module['PGOMonitor'] = PGOMonitor;
 __ATEXIT__.push({ func: function() { PGOMonitor.dump() } });
-addPreRun(function() { addRunDependency('pgo') });
+addPreRun(function (cb) {
+  PGOMonitor.oninit(function () {
+    cb();
+  });
+});
 #endif
 
 function loadMemoryInitializer(filename) {
@@ -898,12 +1005,14 @@ function loadMemoryInitializer(filename) {
   }
 
   // always do this asynchronously, to keep shell and web as similar as possible
-  addPreRun(function() {
+  addPreRun(function(cb) {
     if (ENVIRONMENT_IS_NODE || ENVIRONMENT_IS_SHELL) {
       applyData(Module['readBinary'](filename));
+      cb();
     } else {
       Browser.asyncLoad(filename, function(data) {
         applyData(data);
+        cb();
       }, function(data) {
         throw 'could not load memory initializer ' + filename;
       });

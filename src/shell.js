@@ -151,3 +151,13 @@ for (var key in moduleOverrides) {
 {{BODY}}
 
 // {{MODULE_ADDITIONS}}
+
+// {{PRE_RUN_ADDITIONS}}
+
+#if INVOKE_RUN
+if (!Module['noInitialRun']) {
+  Module.run();
+}
+#endif
+
+// {{POST_RUN_ADDITIONS}}

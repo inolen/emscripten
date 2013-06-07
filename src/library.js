@@ -446,7 +446,6 @@ LibraryManager.library = {
             FS.createDataFile(parent, name, byteArray, canRead, canWrite);
           }
           if (onload) onload();
-          removeRunDependency('cp ' + fullname);
         }
         var handled = false;
         Module['preloadPlugins'].forEach(function(plugin) {
@@ -454,14 +453,12 @@ LibraryManager.library = {
           if (plugin['canHandle'](fullname)) {
             plugin['handle'](byteArray, fullname, finish, function() {
               if (onerror) onerror();
-              removeRunDependency('cp ' + fullname);
             });
             handled = true;
           }
         });
         if (!handled) finish(byteArray);
       }
-      addRunDependency('cp ' + fullname);
       if (typeof url == 'string') {
         Browser.asyncLoad(url, function(byteArray) {
           processData(byteArray);
@@ -2154,8 +2151,7 @@ LibraryManager.library = {
     ExitStatus.prototype = new Error();
     ExitStatus.prototype.constructor = ExitStatus;
 
-    exitRuntime();
-    ABORT = true;
+    exit();
 
     throw new ExitStatus();
   },

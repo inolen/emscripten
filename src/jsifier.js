@@ -1804,7 +1804,7 @@ function JSify(data, functionsOnly, givenFunctions) {
         return IGNORED_FUNCTIONS.indexOf(func.ident) < 0;
       }));
       if (PGO) {
-        print('PGOMonitor.allGenerated = ' + generatedFunctions + ';\nremoveRunDependency("pgo");\n');
+        print('PGOMonitor.initialize(' + generatedFunctions + ');\n');
       }
       if (EMIT_GENERATED_FUNCTIONS) {
         print('// EMSCRIPTEN_GENERATED_FUNCTIONS: ' + generatedFunctions + '\n');
