@@ -1608,7 +1608,7 @@ function JSify(data, functionsOnly, givenFunctions) {
     //
 
     if (!mainPass) {
-      if (phase == 'pre' && !Variables.generatedGlobalBase) {
+      if (phase == 'pre' && !Variables.generatedGlobalBase && !BUILD_AS_SHARED_LIB) {
         Variables.generatedGlobalBase = true;
         // Globals are done, here is the rest of static memory
         assert((TARGET_LE32 && Runtime.GLOBAL_BASE == 8) || (TARGET_X86 && Runtime.GLOBAL_BASE == 4)); // this is assumed in e.g. relocations for linkable modules
@@ -1704,11 +1704,13 @@ function JSify(data, functionsOnly, givenFunctions) {
 
       legalizedI64s = legalizedI64sDefault;
 
-      print('STACK_BASE = STACKTOP = Runtime.alignMemory(STATICTOP);\n');
-      print('staticSealed = true; // seal the static portion of memory\n');
-      print('STACK_MAX = STACK_BASE + ' + TOTAL_STACK + ';\n');
-      print('DYNAMIC_BASE = DYNAMICTOP = Runtime.alignMemory(STACK_MAX);\n');
-      print('assert(DYNAMIC_BASE < TOTAL_MEMORY); // Stack must fit in TOTAL_MEMORY; allocations from here on may enlarge TOTAL_MEMORY\n');
+      if (!BUILD_AS_SHARED_LIB) {
+        print('STACK_BASE = STACKTOP = Runtime.alignMemory(STATICTOP);\n');
+        print('staticSealed = true; // seal the static portion of memory\n');
+        print('STACK_MAX = STACK_BASE + ' + TOTAL_STACK + ';\n');
+        print('DYNAMIC_BASE = DYNAMICTOP = Runtime.alignMemory(STACK_MAX);\n');
+        print('assert(DYNAMIC_BASE < TOTAL_MEMORY); // Stack must fit in TOTAL_MEMORY; allocations from here on may enlarge TOTAL_MEMORY\n');
+      }
 
       if (asmLibraryFunctions.length > 0) {
         print('// ASM_LIBRARY FUNCTIONS');

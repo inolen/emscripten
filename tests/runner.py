@@ -5855,7 +5855,6 @@ The current type of b is: 9
       self.do_run(main, 'supp: 54,2\nmain: 56\nsupp see: 543\nmain see: 76\nok.')
 
     def test_dlfcn_basic(self):
-      return self.skip('shared libs are deprecated')
       if Settings.ASM_JS: return self.skip('TODO: dlopen in asm')
 
       Settings.NAMED_GLOBALS = 1
