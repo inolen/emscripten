@@ -24,18 +24,17 @@ addToLibrary({
 #if PTHREADS || ASYNCIFY
         readableHandlers: [],
         registerReadableHandler: (callback) => {
-          callback.registerCleanupFunc(() => {
-            const i = pipe.readableHandlers.indexOf(callback);
-            if (i !== -1) pipe.readableHandlers.splice(i, 1);
-          });
           pipe.readableHandlers.push(callback);
         },
         notifyReadableHandlers: () => {
-          while (pipe.readableHandlers.length > 0) {
-            const cb = pipe.readableHandlers.shift();
-            if (cb) cb({{{ cDefs.POLLRDNORM }}} | {{{ cDefs.POLLIN }}});
+          for (let i = pipe.readableHandlers.length - 1; i >= 0; i--) {
+            const readEvent = {{{ cDefs.POLLRDNORM }}} | {{{ cDefs.POLLIN }}};
+            const notifyCallback = pipe.readableHandlers[i];
+
+            if (notifyCallback(readEvent)) {
+              pipe.readableHandlers.splice(i, 1);
+            }
           }
-          pipe.readableHandlers = [];
         }
 #endif
       };
@@ -97,7 +96,7 @@ addToLibrary({
           blocks: 0,
         };
       },
-      poll(stream, timeout, notifyCallback) {
+      poll(stream, notifyCallback) {
         var pipe = stream.node.pipe;
 
         if ((stream.flags & {{{ cDefs.O_ACCMODE }}}) === {{{ cDefs.O_WRONLY }}}) {

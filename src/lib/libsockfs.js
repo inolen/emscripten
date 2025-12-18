@@ -67,7 +67,8 @@ addToLibrary({
         error: null, // Used in getsockopt for SOL_SOCKET/SO_ERROR test
         peers: {},
         pending: [],
-        recv_queue: [],
+        recvQueue: [],
+        wakeQueue: [],
 #if SOCKET_WEBRTC
 #else
         sock_ops: SOCKFS.websocket_sock_ops
@@ -104,9 +105,9 @@ addToLibrary({
     },
     // node and stream ops are backend agnostic
     stream_ops: {
-      poll(stream) {
+      poll(stream, wake) {
         var sock = stream.node.sock;
-        return sock.sock_ops.poll(sock);
+        return sock.sock_ops.poll(sock, wake);
       },
       ioctl(stream, request, varargs) {
         var sock = stream.node.sock;
@@ -334,8 +335,17 @@ addToLibrary({
             return;
           }
 
-          sock.recv_queue.push({ addr: peer.addr, port: peer.port, data: data });
+          sock.recvQueue.push({ addr: peer.addr, port: peer.port, data: data });
           SOCKFS.emit('message', sock.stream.fd);
+
+          for (let i = sock.wakeQueue.length - 1; i >= 0; i--) {
+            const readEvent = {{{ cDefs.POLLRDNORM }}} | {{{ cDefs.POLLIN }}};
+            const wake = sock.wakeQueue[i];
+
+            if (wake(readEvent)) {
+              sock.wakeQueue.splice(i, 1);
+            }
+          }
         };
 
         if (ENVIRONMENT_IS_NODE) {
@@ -378,11 +388,15 @@ addToLibrary({
       //
       // actual sock ops
       //
-      poll(sock) {
+      poll(sock, wake) {
         if (sock.type === {{{ cDefs.SOCK_STREAM }}} && sock.server) {
           // listen sockets should only say they're available for reading
           // if there are pending clients.
           return sock.pending.length ? ({{{ cDefs.POLLRDNORM }}} | {{{ cDefs.POLLIN }}}) : 0;
+        }
+
+        if (wake) {
+          sock.wakeQueue.push(wake);
         }
 
         var mask = 0;
@@ -390,8 +404,7 @@ addToLibrary({
           SOCKFS.websocket_sock_ops.getPeer(sock, sock.daddr, sock.dport) :
           null;
 
-        if (sock.recv_queue.length ||
-            !dest ||  // connection-less sockets are always ready to read
+        if (sock.recvQueue.length ||
             (dest && dest.socket.readyState === dest.socket.CLOSING) ||
             (dest && dest.socket.readyState === dest.socket.CLOSED)) {  // let recv return 0 once closed
           mask |= ({{{ cDefs.POLLRDNORM }}} | {{{ cDefs.POLLIN }}});
@@ -421,8 +434,8 @@ addToLibrary({
         switch (request) {
           case {{{ cDefs.FIONREAD }}}:
             var bytes = 0;
-            if (sock.recv_queue.length) {
-              bytes = sock.recv_queue[0].data.length;
+            if (sock.recvQueue.length) {
+              bytes = sock.recvQueue[0].data.length;
             }
             {{{ makeSetValue('arg', '0', 'bytes', 'i32') }}};
             return 0;
@@ -683,7 +696,7 @@ addToLibrary({
           throw new FS.ErrnoError({{{ cDefs.ENOTCONN }}});
         }
 
-        var queued = sock.recv_queue.shift();
+        var queued = sock.recvQueue.shift();
         if (!queued) {
           if (sock.type === {{{ cDefs.SOCK_STREAM }}}) {
             var dest = SOCKFS.websocket_sock_ops.getPeer(sock, sock.daddr, sock.dport);
@@ -725,7 +738,7 @@ addToLibrary({
           dbg(`websocket: read: put back ${bytesRemaining} bytes`);
 #endif
           queued.data = new Uint8Array(queuedBuffer, queuedOffset + bytesRead, bytesRemaining);
-          sock.recv_queue.unshift(queued);
+          sock.recvQueue.unshift(queued);
         }
 
         return res;
