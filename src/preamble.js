@@ -722,7 +722,7 @@ function getWasmImports() {
 #if RUNTIME_DEBUG
     dbg('receiveInstance')
 #endif
-    wasmExports = instance.exports;
+    wasmExports = wasmRawExports = instance.exports;
 
 #if MAIN_MODULE
 #if RELOCATABLE
